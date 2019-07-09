@@ -2,34 +2,33 @@ import { right } from "fp-ts/lib/Either";
 import { Stacker } from "../src/create-router";
 import { get } from "lodash";
 
-export interface Logger {
+interface Logger {
     log: (...msgs: any[]) => void;
 }
 
 export const logger = {
-    injector: ({ request }) =>
+    injector: () =>
         right({
             logger: {
-                log: (...msgs: any[]) =>
-                    console.log({ path: request.path }, ...msgs)
-            }
+                log: console.log
+            },
+            _ctx: {}
         })
-} as Stacker<{}, { logger: Logger }>;
+} as Stacker<{}, { logger: Logger; _ctx: any }>;
 
 export const addLogCtx = (
     ...props: string[]
-): Stacker<{ logger: Logger }, {}> => ({
-    injector: ({ logger, ...ctx }) =>
-        right({
+): Stacker<{ logger: Logger; _ctx: any }, {}> => ({
+    injector: ({ logger, _ctx, ...ctx }) => {
+        const ctxWithExtra = props.reduce(
+            (out, prop) => ({ ...out, [prop]: get(ctx, prop) }),
+            _ctx
+        );
+        return right({
+            _ctx: ctxWithExtra,
             logger: {
-                log: (...msgs: any[]) =>
-                    console.log(
-                        props.reduce(
-                            (out, prop) => ({ ...out, [prop]: get(ctx, prop) }),
-                            {}
-                        ),
-                        ...msgs
-                    )
+                log: (...msgs: any[]) => console.log(ctxWithExtra, ...msgs)
             }
-        })
+        });
+    }
 });

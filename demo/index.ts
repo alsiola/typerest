@@ -15,7 +15,8 @@ const router = r.createRouter({
                 hello: t.string
             })
         ),
-        logger
+        logger,
+        addLogCtx("request.path")
     ]
 });
 
