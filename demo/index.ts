@@ -1,5 +1,6 @@
 import * as r from "../src";
 import * as t from "io-ts";
+import { logger, addLogCtx } from "./logging";
 
 /**
  * The router has a base path, prepended to all routes, and
@@ -13,7 +14,8 @@ const router = r.createRouter({
             t.interface({
                 hello: t.string
             })
-        )
+        ),
+        logger
     ]
 });
 
@@ -29,9 +31,11 @@ router.get({
             t.interface({
                 goodbye: t.string
             })
-        )
+        ),
+        addLogCtx("query.hello", "query.goodbye")
     ],
-    handler: ({ query: { hello, goodbye } }) => {
+    handler: ({ query: { hello, goodbye }, logger }) => {
+        logger.log("Handling request");
         return r.success({ hello, goodbye });
     }
 });

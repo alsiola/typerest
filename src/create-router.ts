@@ -3,10 +3,6 @@ import { Either, left, right } from "fp-ts/lib/Either";
 import { compact, flatten, merge } from "lodash";
 import { RestError } from "./senders";
 
-export interface Logger {
-    log: (...msgs: any[]) => void;
-}
-
 export type Middleware = (
     req: Request,
     res: Response,
@@ -149,19 +145,17 @@ const handler = <
 const addRoute = <TRouterStack extends StackerArray<any, any> | [] = []>({
     router,
     method,
-    logger,
     path,
     stack
 }: {
     router: Router;
     method: "get" | "put" | "post" | "delete";
-    logger: Logger;
     path: string;
     stack?: TRouterStack;
 }) => <TStack extends StackerArray<any, any> | [] = []>(
     routeOpts: RouteOpts<TStack, TRouterStack>
 ) => {
-    logger.log(`Adding ${method} route for ${routeOpts.path}`);
+    console.log(`Adding ${method} route for ${routeOpts.path}`);
     const handle = handler<TStack, TRouterStack>(
         [...(stack || []), ...(routeOpts.stack || [])],
         routeOpts.handler
@@ -204,19 +198,17 @@ export const createRouter = <TStack extends StackerArray<any, any> | [] = []>({
     const router = Router();
 
     return {
-        get: addRoute({ router, method: "get", logger: console, path, stack }),
-        put: addRoute({ router, method: "put", logger: console, path, stack }),
+        get: addRoute({ router, method: "get", path, stack }),
+        put: addRoute({ router, method: "put", path, stack }),
         post: addRoute({
             router,
             method: "post",
-            logger: console,
             path,
             stack
         }),
         delete: addRoute({
             router,
             method: "delete",
-            logger: console,
             path,
             stack
         }),
