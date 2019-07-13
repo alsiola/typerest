@@ -18,6 +18,8 @@ export interface Stacker<InjectorCtx, InjectorResult> {
     injector?: Injector<InjectorCtx, InjectorResult>;
 }
 
+type Injected<T extends AnyStacker> = T extends Stacker<any, infer R> ? R : {};
+
 export type AnyStacker = Stacker<any, any>;
 
 export type Stacker1 = [Stacker<{}, any>];
@@ -27,16 +29,18 @@ export type Stacker3<T1 extends AnyStacker, T2 extends Stacker<T1, any>> = [
     T1,
     T2
 ];
+export type Stacker4<
+    T1 extends AnyStacker,
+    T2 extends Stacker<T1, any>,
+    T3 extends Stacker<T1 & T2, any>
+> = [Stacker<Injected<T1> & Injected<T2> & Injected<T3>, any>, T1, T2, T3];
 
-export type StackerArray<
-    T1 extends AnyStacker | void,
-    T2 extends AnyStacker | void
-> = T2 extends AnyStacker
-    ? T1 extends AnyStacker
-        ? Stacker3<T1, T2>
-        : T1 extends AnyStacker
-        ? Stacker2<T1>
-        : Stacker1
+export type StackerArray<T1, T2, T3 = void> = T1 extends AnyStacker
+    ? T2 extends AnyStacker
+        ? T3 extends AnyStacker
+            ? Stacker4<T1, T2, T3>
+            : Stacker3<T1, T2>
+        : Stacker2<T1>
     : Stacker1;
 
 /**
@@ -46,10 +50,10 @@ export type StackerArray<
 export interface RouteOpts<
     // S1 extends AnyStacker | void = void,
     // S2 extends AnyStacker | void = void,
-    TStack extends StackerArray<any, any> | [] = [],
+    TStack extends StackerArray<any, any, any> | [] = [],
     // R1 extends AnyStacker | void = void,
     // R2 extends AnyStacker | void = void,
-    TRouterStack extends StackerArray<any, any> | [] = []
+    TRouterStack extends StackerArray<any, any, any> | [] = []
 > {
     // Similar to express path - the endpoint
     path: string;
@@ -64,11 +68,14 @@ export interface RouteOpts<
     ) => Either<RestError, {}>;
 }
 
-type Injected<T extends AnyStacker> = T extends Stacker<any, infer R> ? R : {};
-
 export type HandlerArgs<
-    TStack extends StackerArray<any, any> | []
-> = TStack extends Stacker3<any, any>
+    TStack extends StackerArray<any, any, any> | []
+> = TStack extends Stacker4<any, any, any>
+    ? Injected<TStack[0]> &
+          Injected<TStack[1]> &
+          Injected<TStack[2]> &
+          Injected<TStack[3]>
+    : TStack extends Stacker3<any, any>
     ? Injected<TStack[0]> & Injected<TStack[1]> & Injected<TStack[2]>
     : TStack extends Stacker2<any>
     ? Injected<TStack[0]> & Injected<TStack[1]>
@@ -83,8 +90,8 @@ const responderFactory = (res: Response) => (result: Either<RestError, {}>) => {
 };
 
 const handler = <
-    TStack extends StackerArray<any, any> | [] = [],
-    TRouterStack extends StackerArray<any, any> | [] = []
+    TStack extends StackerArray<any, any, any> | [] = [],
+    TRouterStack extends StackerArray<any, any, any> | [] = []
 >(
     stack: AnyStacker[],
     handler: RouteOpts<TStack, TRouterStack>["handler"]
@@ -142,7 +149,7 @@ const handler = <
     }
 };
 
-const addRoute = <TRouterStack extends StackerArray<any, any> | [] = []>({
+const addRoute = <TRouterStack extends StackerArray<any, any, any> | [] = []>({
     router,
     method,
     path,
@@ -181,7 +188,7 @@ const addRoute = <TRouterStack extends StackerArray<any, any> | [] = []>({
     ] as any);
 };
 
-interface RouterOpts<TStack extends StackerArray<any, any> | []> {
+interface RouterOpts<TStack extends StackerArray<any, any, any> | []> {
     path?: string;
     stack?: TStack;
 }
@@ -191,7 +198,9 @@ interface RouterOpts<TStack extends StackerArray<any, any> | []> {
  * When ready for use, calling router.getRouter() will return the underlying
  * express router for use in an express app
  */
-export const createRouter = <TStack extends StackerArray<any, any> | [] = []>({
+export const createRouter = <
+    TStack extends StackerArray<any, any, any> | [] = []
+>({
     path = "",
     stack
 }: RouterOpts<TStack>) => {

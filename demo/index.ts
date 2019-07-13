@@ -1,7 +1,7 @@
 import * as r from "../src";
 import * as t from "io-ts";
 import { logger, addLogCtx } from "./logging";
-import { auth } from "./auth";
+import { authenticate, apiKey } from "./auth";
 
 /**
  * The router has a base path, prepended to all routes, and
@@ -11,7 +11,9 @@ import { auth } from "./auth";
 const router = r.createRouter({
     path: "/test",
     stack: [
-        auth({ apiKey: "123" }),
+        authenticate({
+            strategy: apiKey("123")
+        }),
         r.query(
             t.interface({
                 hello: t.string
