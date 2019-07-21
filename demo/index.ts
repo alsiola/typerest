@@ -2,6 +2,7 @@ import * as r from "../src";
 import * as t from "io-ts";
 import { logger, addLogCtx } from "./logging";
 import { authenticate, apiKey } from "./auth";
+import { path } from "../src";
 
 /**
  * The router has a base path, prepended to all routes, and
@@ -9,7 +10,7 @@ import { authenticate, apiKey } from "./auth";
  * routes created with this router.
  */
 const router = r.createRouter({
-    path: "/test",
+    path: path`/organization/${"organizationId"}`,
     stack: [
         authenticate({
             strategy: apiKey("123")
@@ -30,18 +31,9 @@ const router = r.createRouter({
  * that must Either<RestError, {}>.
  */
 router.get({
-    path: "/",
-    stack: [
-        r.query(
-            t.interface({
-                goodbye: t.string
-            })
-        ),
-        addLogCtx("query.hello", "query.goodbye")
-    ],
-    handler: ({ query: { hello, goodbye }, logger }) => {
-        logger.log("Handling request");
-        return r.success({ hello, goodbye });
+    path: path`/user/${"userId"}`,
+    handler: ({ params: { organizationId, userId } }) => {
+        return r.success({ organizationId, userId });
     }
 });
 

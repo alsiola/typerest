@@ -1,6 +1,6 @@
-import { Stacker } from "../src/create-router";
 import { Either, right, left } from "fp-ts/lib/Either";
 import { Request } from "express";
+import { Stacker } from "../src";
 
 export type AuthenticationStrategy = (req: Request) => Either<string, true>;
 

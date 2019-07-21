@@ -1,6 +1,6 @@
 import { right } from "fp-ts/lib/Either";
-import { Stacker } from "../src/create-router";
 import { get } from "lodash";
+import { Stacker } from "../src";
 
 interface Logger {
     log: (...msgs: any[]) => void;

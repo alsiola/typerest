@@ -1,47 +1,9 @@
-import { Request, Response, Router, NextFunction } from "express";
+import { Request, Response, Router } from "express";
 import { Either, left, right } from "fp-ts/lib/Either";
 import { compact, flatten, merge } from "lodash";
 import { RestError } from "./senders";
-
-export type Middleware = (
-    req: Request,
-    res: Response,
-    next: NextFunction
-) => void;
-
-export type Injector<T, U> = (
-    a: T & { request: Request }
-) => Either<RestError, U>;
-
-export interface Stacker<InjectorCtx, InjectorResult> {
-    middleware?: Middleware[];
-    injector?: Injector<InjectorCtx, InjectorResult>;
-}
-
-type Injected<T extends AnyStacker> = T extends Stacker<any, infer R> ? R : {};
-
-export type AnyStacker = Stacker<any, any>;
-
-export type Stacker1 = [Stacker<{}, any>];
-export type Stacker2<T1 extends AnyStacker> = [Stacker<Injected<T1>, any>, T1];
-export type Stacker3<T1 extends AnyStacker, T2 extends Stacker<T1, any>> = [
-    Stacker<Injected<T1> & Injected<T2>, any>,
-    T1,
-    T2
-];
-export type Stacker4<
-    T1 extends AnyStacker,
-    T2 extends Stacker<T1, any>,
-    T3 extends Stacker<T1 & T2, any>
-> = [Stacker<Injected<T1> & Injected<T2> & Injected<T3>, any>, T1, T2, T3];
-
-export type StackerArray<T1, T2, T3 = void> = T1 extends AnyStacker
-    ? T2 extends AnyStacker
-        ? T3 extends AnyStacker
-            ? Stacker4<T1, T2, T3>
-            : Stacker3<T1, T2>
-        : Stacker2<T1>
-    : Stacker1;
+import { StackerArray, InjectedStack, AnyStacker } from "./stackers";
+import { ProcessedPath } from "./path";
 
 /**
  * RouteOpts is the primary type that will be used to define routes.
@@ -53,35 +15,23 @@ export interface RouteOpts<
     TStack extends StackerArray<any, any, any> | [] = [],
     // R1 extends AnyStacker | void = void,
     // R2 extends AnyStacker | void = void,
-    TRouterStack extends StackerArray<any, any, any> | [] = []
+    TRouterStack extends StackerArray<any, any, any> | [] = [],
+    TParams extends string = ""
 > {
-    // Similar to express path - the endpoint
-    path: string;
+    // Result of using path helper, generating a type checker
+    path: ProcessedPath<TParams>;
     /**
      * What services should be injected into the handler, e.g. resolvers
      */
     stack?: TStack;
     // How to deal with a valid request
     handler: (
-        handlerArgs: HandlerArgs<TStack> &
-            HandlerArgs<TRouterStack> & { request: Request }
+        handlerArgs: InjectedStack<TStack> &
+            InjectedStack<TRouterStack> & {
+                params: Record<TParams, string>;
+            } & { request: Request }
     ) => Either<RestError, {}>;
 }
-
-export type HandlerArgs<
-    TStack extends StackerArray<any, any, any> | []
-> = TStack extends Stacker4<any, any, any>
-    ? Injected<TStack[0]> &
-          Injected<TStack[1]> &
-          Injected<TStack[2]> &
-          Injected<TStack[3]>
-    : TStack extends Stacker3<any, any>
-    ? Injected<TStack[0]> & Injected<TStack[1]> & Injected<TStack[2]>
-    : TStack extends Stacker2<any>
-    ? Injected<TStack[0]> & Injected<TStack[1]>
-    : TStack extends Stacker1
-    ? Injected<TStack[0]>
-    : {};
 
 const responderFactory = (res: Response) => (result: Either<RestError, {}>) => {
     result
@@ -99,7 +49,16 @@ const handler = <
     const responder = responderFactory(res);
 
     try {
-        const initialContext: { request: Request; err?: any } = { request };
+        const { params = {} } = request;
+
+        const initialContext: {
+            request: Request;
+            params: Record<string, string>;
+            err?: any;
+        } = {
+            request,
+            params
+        };
 
         const injectionResult = await stack.reduce(
             async (out, stacker) => {
@@ -137,7 +96,7 @@ const handler = <
 
         injectionResult
             .map(async ctx => {
-                const result = await handler(ctx as HandlerArgs<TStack>);
+                const result = await handler(ctx as InjectedStack<TStack>);
                 responder(result);
             })
             .mapLeft(({ err }) => {
@@ -145,11 +104,14 @@ const handler = <
             });
     } catch (err) {
         console.error(err);
-        responder(left(err));
+        responder(left({ code: 500, message: "Internal server error" }));
     }
 };
 
-const addRoute = <TRouterStack extends StackerArray<any, any, any> | [] = []>({
+const addRoute = <
+    TRouterStack extends StackerArray<any, any, any> | [] = [],
+    TBaseParams extends string = ""
+>({
     router,
     method,
     path,
@@ -157,12 +119,14 @@ const addRoute = <TRouterStack extends StackerArray<any, any, any> | [] = []>({
 }: {
     router: Router;
     method: "get" | "put" | "post" | "delete";
-    path: string;
+    path: ProcessedPath<TBaseParams>;
     stack?: TRouterStack;
-}) => <TStack extends StackerArray<any, any> | [] = []>(
-    routeOpts: RouteOpts<TStack, TRouterStack>
+}) => <
+    TStack extends StackerArray<any, any> | [] = [],
+    TParams extends string = ""
+>(
+    routeOpts: RouteOpts<TStack, TRouterStack, TParams | TBaseParams>
 ) => {
-    console.log(`Adding ${method} route for ${routeOpts.path}`);
     const handle = handler<TStack, TRouterStack>(
         [...(stack || []), ...(routeOpts.stack || [])],
         routeOpts.handler
@@ -182,14 +146,17 @@ const addRoute = <TRouterStack extends StackerArray<any, any, any> | [] = []>({
     );
 
     router[method].apply(router, [
-        path + routeOpts.path,
+        path + routeOpts.path.path,
         ...middleware,
         handle
     ] as any);
 };
 
-interface RouterOpts<TStack extends StackerArray<any, any, any> | []> {
-    path?: string;
+interface RouterOpts<
+    TStack extends StackerArray<any, any, any> | [],
+    TParams extends string
+> {
+    path?: ProcessedPath<TParams>;
     stack?: TStack;
 }
 /**
@@ -199,11 +166,12 @@ interface RouterOpts<TStack extends StackerArray<any, any, any> | []> {
  * express router for use in an express app
  */
 export const createRouter = <
-    TStack extends StackerArray<any, any, any> | [] = []
+    TStack extends StackerArray<any, any, any> | [] = [],
+    TParams extends string = ""
 >({
-    path = "",
+    path = { path: "" },
     stack
-}: RouterOpts<TStack>) => {
+}: RouterOpts<TStack, TParams>) => {
     const router = Router();
 
     return {
